@@ -1,0 +1,194 @@
+<meta name='viewport' content='width=device-width, initial-scale=1'/><!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kalkulator SJF</title>
+<style>
+  body{font-family:Arial,sans-serif;background:#f1f5f9;margin:0;padding:14px;color:#1e293b}
+  .card{background:#fff;border-radius:12px;padding:14px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.1)}
+  h2{margin:0 0 10px;font-size:20px;text-align:center}
+  h3{margin:0 0 10px;font-size:16px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{border:1px solid #cbd5e1;padding:6px;text-align:center}
+  th{background:#2563eb;color:#fff}
+  input[type=number]{width:60px;padding:6px;border:1px solid #94a3b8;border-radius:6px;text-align:center;font-size:14px}
+  select{padding:8px;border-radius:6px;border:1px solid #94a3b8;font-size:14px;width:100%;margin-bottom:10px}
+  button{padding:10px 14px;border:none;border-radius:8px;font-size:14px;color:#fff;margin:4px 2px;cursor:pointer}
+  .add{background:#16a34a}.run{background:#2563eb;width:100%}.reset{background:#64748b}.del{background:#dc2626;padding:6px 10px}
+  .gantt{display:flex;overflow-x:auto;padding-bottom:28px;margin-top:6px}
+  .blk{min-width:44px;height:44px;background:#3b82f6;color:#fff;border:1px solid #fff;display:flex;align-items:center;justify-content:center;position:relative;font-size:13px;font-weight:bold}
+  .blk.idle{background:#94a3b8}
+  .blk span{position:absolute;bottom:-20px;left:-4px;color:#334155;font-size:12px;font-weight:normal}
+  .blk span.end{left:auto;right:-4px}
+  .avg{margin-top:10px;font-size:15px;line-height:1.7}
+  .wrap{overflow-x:auto}
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h2>Kalkulator SJF</h2>
+  <label>Jenis algoritma:</label>
+  <select id="mode">
+    <option value="np">SJF Non-Preemptive</option>
+    <option value="p">SJF Preemptive (SRTF)</option>
+  </select>
+  <div class="wrap">
+    <table id="tbl">
+      <thead><tr><th>Proses</th><th>Arrival</th><th>Burst</th><th>Hapus</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <button class="add" onclick="addRow()">+ Tambah Proses</button>
+  <button class="reset" onclick="resetAll()">Reset</button>
+  <button class="run" onclick="hitung()">Hitung</button>
+</div>
+
+<div class="card" id="hasil" style="display:none">
+  <h3>Hasil Perhitungan</h3>
+  <div class="wrap">
+    <table id="out">
+      <thead><tr><th>Proses</th><th>AT</th><th>BT</th><th>CT</th><th>TAT</th><th>WT</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="avg" id="avg"></div>
+  <h3 style="margin-top:14px">Diagram Gantt</h3>
+  <div class="gantt" id="gantt"></div>
+</div>
+
+<script>
+var counter = 0;
+
+function addRow(at, bt){
+  counter++;
+  var tb = document.querySelector('#tbl tbody');
+  var tr = document.createElement('tr');
+  tr.innerHTML =
+    '<td class="pid">P' + counter + '</td>' +
+    '<td><input type="number" min="0" value="' + (at===undefined?0:at) + '"></td>' +
+    '<td><input type="number" min="1" value="' + (bt===undefined?1:bt) + '"></td>' +
+    '<td><button class="del" onclick="delRow(this)">X</button></td>';
+  tb.appendChild(tr);
+}
+
+function delRow(btn){
+  btn.closest('tr').remove();
+  var rows = document.querySelectorAll('#tbl tbody tr');
+  counter = 0;
+  rows.forEach(function(r){ counter++; r.querySelector('.pid').textContent = 'P' + counter; });
+}
+
+function resetAll(){
+  document.querySelector('#tbl tbody').innerHTML = '';
+  counter = 0;
+  document.getElementById('hasil').style.display = 'none';
+  addRow(0,6); addRow(1,8); addRow(2,7); addRow(3,3);
+}
+
+function ambilData(){
+  var rows = document.querySelectorAll('#tbl tbody tr');
+  var p = [];
+  for (var i = 0; i < rows.length; i++){
+    var inp = rows[i].querySelectorAll('input');
+    var at = parseInt(inp[0].value);
+    var bt = parseInt(inp[1].value);
+    if (isNaN(at) || isNaN(bt) || at < 0 || bt < 1){
+      alert('Isi Arrival (>=0) dan Burst (>=1) dengan benar pada P' + (i+1));
+      return null;
+    }
+    p.push({id:'P'+(i+1), at:at, bt:bt, rem:bt, ct:0, done:false});
+  }
+  if (p.length === 0){ alert('Tambah minimal 1 proses'); return null; }
+  return p;
+}
+
+function tambahGantt(g, id, start, end){
+  if (g.length && g[g.length-1].id === id && g[g.length-1].end === start){
+    g[g.length-1].end = end;
+  } else {
+    g.push({id:id, start:start, end:end});
+  }
+}
+
+function nonPreemptive(p){
+  var time = 0, done = 0, g = [];
+  while (done < p.length){
+    var cand = p.filter(function(x){ return !x.done && x.at <= time; });
+    if (cand.length === 0){
+      var next = Math.min.apply(null, p.filter(function(x){return !x.done;}).map(function(x){return x.at;}));
+      tambahGantt(g, 'Idle', time, next);
+      time = next;
+      continue;
+    }
+    cand.sort(function(a,b){ return a.bt - b.bt || a.at - b.at; });
+    var c = cand[0];
+    tambahGantt(g, c.id, time, time + c.bt);
+    time += c.bt;
+    c.ct = time;
+    c.done = true;
+    done++;
+  }
+  return g;
+}
+
+function preemptive(p){
+  var time = 0, done = 0, g = [];
+  while (done < p.length){
+    var cand = p.filter(function(x){ return !x.done && x.at <= time; });
+    if (cand.length === 0){
+      tambahGantt(g, 'Idle', time, time + 1);
+      time++;
+      continue;
+    }
+    cand.sort(function(a,b){ return a.rem - b.rem || a.at - b.at; });
+    var c = cand[0];
+    tambahGantt(g, c.id, time, time + 1);
+    c.rem--;
+    time++;
+    if (c.rem === 0){ c.ct = time; c.done = true; done++; }
+  }
+  return g;
+}
+
+function hitung(){
+  var p = ambilData();
+  if (!p) return;
+  var mode = document.getElementById('mode').value;
+  var g = (mode === 'np') ? nonPreemptive(p) : preemptive(p);
+
+  var tbody = document.querySelector('#out tbody');
+  tbody.innerHTML = '';
+  var sumT = 0, sumW = 0;
+  p.forEach(function(x){
+    var tat = x.ct - x.at;
+    var wt = tat - x.bt;
+    sumT += tat; sumW += wt;
+    tbody.innerHTML += '<tr><td>'+x.id+'</td><td>'+x.at+'</td><td>'+x.bt+'</td><td>'+x.ct+'</td><td>'+tat+'</td><td>'+wt+'</td></tr>';
+  });
+
+  document.getElementById('avg').innerHTML =
+    'Rata-rata Turnaround Time (TAT): <b>' + (sumT/p.length).toFixed(2) + '</b><br>' +
+    'Rata-rata Waiting Time (WT): <b>' + (sumW/p.length).toFixed(2) + '</b><br>' +
+    '<small>TAT = CT - AT, WT = TAT - BT</small>';
+
+  var gd = document.getElementById('gantt');
+  gd.innerHTML = '';
+  g.forEach(function(b, i){
+    var w = Math.max(44, (b.end - b.start) * 28);
+    var div = document.createElement('div');
+    div.className = 'blk' + (b.id === 'Idle' ? ' idle' : '');
+    div.style.minWidth = w + 'px';
+    div.innerHTML = b.id + '<span>' + b.start + '</span>' + (i === g.length-1 ? '<span class="end">' + b.end + '</span>' : '');
+    gd.appendChild(div);
+  });
+
+  document.getElementById('hasil').style.display = 'block';
+  document.getElementById('hasil').scrollIntoView({behavior:'smooth'});
+}
+
+resetAll();
+</script>
+</body>
+</html>
